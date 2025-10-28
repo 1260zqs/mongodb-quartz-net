@@ -42,6 +42,7 @@ namespace Quartz.Spi.MongoDbJobStore.Models
 
         public IJobDetail GetJobDetail()
         {
+            if (JobType == null) return null;
             // The missing properties are figured out at runtime from the job type attributes
             return JobBuilder.Create(JobType)
                 .WithIdentity(new JobKey(Id.Name, Id.Group))
