@@ -11,6 +11,7 @@ using Quartz.Spi.MongoDbJobStore.Models;
 using Quartz.Spi.MongoDbJobStore.Models.Id;
 using Quartz.Spi.MongoDbJobStore.Repositories;
 using Quartz.Util;
+using static System.String;
 using Calendar = Quartz.Spi.MongoDbJobStore.Models.Calendar;
 
 namespace Quartz.Spi.MongoDbJobStore
@@ -36,8 +37,6 @@ namespace Quartz.Spi.MongoDbJobStore
         private SchedulerRepository _schedulerRepository;
         private bool _schedulerRunning;
 
-        public string MongoDbFactory { get; set; }
-
         private ISchedulerSignaler _schedulerSignaler;
         private TriggerRepository _triggerRepository;
 
@@ -54,6 +53,7 @@ namespace Quartz.Spi.MongoDbJobStore
         }
 
         public string CollectionPrefix { get; set; }
+        public string MongoDbFactory { get; set; }
 
         /// <summary>
         ///     Get or set the maximum number of misfired triggers that the misfire handling
@@ -119,7 +119,7 @@ namespace Quartz.Spi.MongoDbJobStore
         {
             _schedulerSignaler = signaler;
             _schedulerId = new SchedulerId(InstanceId, InstanceName);
-            Log.Information($"Scheduler {_schedulerId} initialize");
+            Log.Information("Scheduler {0} initialize", _schedulerId);
 
             var type = Type.GetType(MongoDbFactory)!;
             var factory = (IMongoDbJobStoreFactory)Activator.CreateInstance(type)!;
@@ -138,7 +138,7 @@ namespace Quartz.Spi.MongoDbJobStore
 
         public async Task SchedulerStarted(CancellationToken token = default(CancellationToken))
         {
-            Log.Verbose($"Scheduler {_schedulerId} started");
+            Log.Verbose("Scheduler {_schedulerId} started", _schedulerId);
             await _schedulerRepository.AddScheduler(new Scheduler
             {
                 Id = _schedulerId,
@@ -162,21 +162,21 @@ namespace Quartz.Spi.MongoDbJobStore
 
         public async Task SchedulerPaused(CancellationToken token = default(CancellationToken))
         {
-            Log.Verbose($"Scheduler {_schedulerId} paused");
+            Log.Verbose("Scheduler {_schedulerId} paused", _schedulerId);
             await _schedulerRepository.UpdateState(_schedulerId.Id, SchedulerState.Paused).ConfigureAwait(false);
             _schedulerRunning = false;
         }
 
         public async Task SchedulerResumed(CancellationToken token = default(CancellationToken))
         {
-            Log.Verbose($"Scheduler {_schedulerId} resumed");
+            Log.Verbose("Scheduler {0} resumed", _schedulerId);
             await _schedulerRepository.UpdateState(_schedulerId.Id, SchedulerState.Resumed).ConfigureAwait(false);
             _schedulerRunning = true;
         }
 
         public async Task Shutdown(CancellationToken token = default(CancellationToken))
         {
-            Log.Verbose($"Scheduler {_schedulerId} shutdown");
+            Log.Verbose("Scheduler {0} shutdown", _schedulerId);
             if (_misfireHandler != null)
             {
                 _misfireHandler.Shutdown();
@@ -795,7 +795,7 @@ namespace Quartz.Spi.MongoDbJobStore
                         }
                         catch (Exception ex)
                         {
-                            Log.Error($"Caught exception: {ex.Message}", ex);
+                            Log.Error(ex, "Caught exception: {ex.Message}", ex.Message);
                             result = new TriggerFiredResult(ex);
                         }
 
@@ -944,8 +944,7 @@ namespace Quartz.Spi.MongoDbJobStore
             }
 
             var removedTrigger = await _triggerRepository.DeleteTrigger(triggerKey).ConfigureAwait(false);
-            await StoreTriggerInternal(newTrigger, job, false, Models.TriggerState.Waiting, false, false).ConfigureAwait(false)
-                ;
+            await StoreTriggerInternal(newTrigger, job, false, Models.TriggerState.Waiting, false, false).ConfigureAwait(false);
             return removedTrigger > 0;
         }
 
@@ -1076,8 +1075,7 @@ namespace Quartz.Spi.MongoDbJobStore
             }
             else
             {
-                await _calendarRepository.AddCalendar(new Calendar(calName, calendar, InstanceName)).ConfigureAwait(false)
-                    ;
+                await _calendarRepository.AddCalendar(new Calendar(calName, calendar, InstanceName)).ConfigureAwait(false);
             }
         }
 
@@ -1113,18 +1111,14 @@ namespace Quartz.Spi.MongoDbJobStore
 
             if (!forceState)
             {
-                var shouldBePaused =
-                        await _pausedTriggerGroupRepository.IsTriggerGroupPaused(newTrigger.Key.Group).ConfigureAwait(false)
-                    ;
+                var shouldBePaused = await _pausedTriggerGroupRepository.IsTriggerGroupPaused(newTrigger.Key.Group).ConfigureAwait(false);
 
                 if (!shouldBePaused)
                 {
-                    shouldBePaused = await _pausedTriggerGroupRepository.IsTriggerGroupPaused(AllGroupsPaused).ConfigureAwait(false)
-                        ;
+                    shouldBePaused = await _pausedTriggerGroupRepository.IsTriggerGroupPaused(AllGroupsPaused).ConfigureAwait(false);
                     if (shouldBePaused)
                     {
-                        await _pausedTriggerGroupRepository.AddPausedTriggerGroup(newTrigger.Key.Group).ConfigureAwait(false)
-                            ;
+                        await _pausedTriggerGroupRepository.AddPausedTriggerGroup(newTrigger.Key.Group).ConfigureAwait(false);
                     }
                 }
 
@@ -1153,13 +1147,11 @@ namespace Quartz.Spi.MongoDbJobStore
 
             if (existingTrigger)
             {
-                await _triggerRepository.UpdateTrigger(TriggerFactory.CreateTrigger(newTrigger, state, InstanceName)).ConfigureAwait(false)
-                    ;
+                await _triggerRepository.UpdateTrigger(TriggerFactory.CreateTrigger(newTrigger, state, InstanceName)).ConfigureAwait(false);
             }
             else
             {
-                await _triggerRepository.AddTrigger(TriggerFactory.CreateTrigger(newTrigger, state, InstanceName)).ConfigureAwait(false)
-                    ;
+                await _triggerRepository.AddTrigger(TriggerFactory.CreateTrigger(newTrigger, state, InstanceName)).ConfigureAwait(false);
             }
         }
 
@@ -1508,7 +1500,7 @@ namespace Quartz.Spi.MongoDbJobStore
             result += await _triggerRepository.UpdateTriggersStates(Models.TriggerState.Paused,
                 Models.TriggerState.PausedBlocked).ConfigureAwait(false);
 
-            Log.Information("Freed " + result + " triggers from 'acquired' / 'blocked' state.");
+            Log.Information("Freed {0} triggers from 'acquired' / 'blocked' state.", result);
 
             await RecoverMisfiredJobsInternal(true).ConfigureAwait(false);
 
@@ -1535,11 +1527,10 @@ namespace Quartz.Spi.MongoDbJobStore
             foreach (var completedTrigger in completedTriggers)
                 await RemoveTriggerInternal(completedTrigger).ConfigureAwait(false);
 
-            Log.Information(string.Format(CultureInfo.InvariantCulture, "Removed {0} 'complete' triggers.",
-                completedTriggers.Count));
+            Log.Information("Removed {0} 'complete' triggers.", completedTriggers.Count);
 
             result = await _firedTriggerRepository.DeleteFiredTriggersByInstanceId(InstanceId).ConfigureAwait(false);
-            Log.Information("Removed " + result + " stale fired job entries.");
+            Log.Information("Removed {0} stale fired job entries.", result);
         }
 
         private async Task<RecoverMisfiredJobsResult> RecoverMisfiredJobsInternal(bool recovering)
@@ -1565,8 +1556,7 @@ namespace Quartz.Spi.MongoDbJobStore
             }
             else
             {
-                Log.Debug(
-                    "Found 0 triggers that missed their scheduled fire-time.");
+                Log.Debug("Found 0 triggers that missed their scheduled fire-time.");
                 return RecoverMisfiredJobsResult.NoOp;
             }
 
@@ -1579,8 +1569,7 @@ namespace Quartz.Spi.MongoDbJobStore
                     continue;
                 }
 
-                await DoUpdateOfMisfiredTrigger(trigger, false, Models.TriggerState.Waiting, recovering).ConfigureAwait(false)
-                    ;
+                await DoUpdateOfMisfiredTrigger(trigger, false, Models.TriggerState.Waiting, recovering).ConfigureAwait(false);
 
                 var nextTime = trigger.NextFireTime;
                 if (nextTime.HasValue && nextTime.Value < earliestNewTime)
