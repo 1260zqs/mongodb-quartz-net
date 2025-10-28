@@ -4,7 +4,6 @@ using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Common.Logging;
 using MongoDB.Driver;
 using Quartz.Impl.AdoJobStore;
 using Quartz.Impl.Matchers;
@@ -24,10 +23,8 @@ namespace Quartz.Spi.MongoDbJobStore
         private static readonly DateTimeOffset? SchedulingSignalDateTime = new DateTimeOffset(1982, 6, 28, 0, 0, 0,
             TimeSpan.FromSeconds(0));
 
-        private static readonly ILog Log = LogManager.GetLogger<MongoDbJobStore>();
         private static long _fireTriggerRecordCounter = DateTime.UtcNow.Ticks;
         private CalendarRepository _calendarRepository;
-        private IMongoClient _client;
         private IMongoDatabase _database;
         private FiredTriggerRepository _firedTriggerRepository;
         private JobDetailRepository _jobDetailRepository;
@@ -38,6 +35,8 @@ namespace Quartz.Spi.MongoDbJobStore
         private SchedulerId _schedulerId;
         private SchedulerRepository _schedulerRepository;
         private bool _schedulerRunning;
+
+        public string MongoDbFactory { get; set; }
 
         private ISchedulerSignaler _schedulerSignaler;
         private TriggerRepository _triggerRepository;
@@ -54,7 +53,6 @@ namespace Quartz.Spi.MongoDbJobStore
             DbRetryInterval = TimeSpan.FromSeconds(15);
         }
 
-        public string ConnectionString { get; set; }
         public string CollectionPrefix { get; set; }
 
         /// <summary>
@@ -117,16 +115,16 @@ namespace Quartz.Spi.MongoDbJobStore
         public string InstanceName { get; set; }
         public int ThreadPoolSize { get; set; }
 
-        public Task Initialize(ITypeLoadHelper loadHelper, ISchedulerSignaler signaler,
-            CancellationToken token = default(CancellationToken))
+        public Task Initialize(ITypeLoadHelper loadHelper, ISchedulerSignaler signaler, CancellationToken token = default)
         {
             _schedulerSignaler = signaler;
             _schedulerId = new SchedulerId(InstanceId, InstanceName);
-            Log.Trace($"Scheduler {_schedulerId} initialize");
+            Log.Information($"Scheduler {_schedulerId} initialize");
 
-            var url = new MongoUrl(ConnectionString);
-            _client = new MongoClient(ConnectionString);
-            _database = _client.GetDatabase(url.DatabaseName);
+            var type = Type.GetType(MongoDbFactory)!;
+            var factory = (IMongoDbJobStoreFactory)Activator.CreateInstance(type)!;
+
+            _database = factory.GetDatabase();
             _lockManager = new LockManager(_database, InstanceName, CollectionPrefix);
             _schedulerRepository = new SchedulerRepository(_database, InstanceName, CollectionPrefix);
             _jobDetailRepository = new JobDetailRepository(_database, InstanceName, CollectionPrefix);
@@ -140,7 +138,7 @@ namespace Quartz.Spi.MongoDbJobStore
 
         public async Task SchedulerStarted(CancellationToken token = default(CancellationToken))
         {
-            Log.Trace($"Scheduler {_schedulerId} started");
+            Log.Verbose($"Scheduler {_schedulerId} started");
             await _schedulerRepository.AddScheduler(new Scheduler
             {
                 Id = _schedulerId,
@@ -164,21 +162,21 @@ namespace Quartz.Spi.MongoDbJobStore
 
         public async Task SchedulerPaused(CancellationToken token = default(CancellationToken))
         {
-            Log.Trace($"Scheduler {_schedulerId} paused");
+            Log.Verbose($"Scheduler {_schedulerId} paused");
             await _schedulerRepository.UpdateState(_schedulerId.Id, SchedulerState.Paused).ConfigureAwait(false);
             _schedulerRunning = false;
         }
 
         public async Task SchedulerResumed(CancellationToken token = default(CancellationToken))
         {
-            Log.Trace($"Scheduler {_schedulerId} resumed");
+            Log.Verbose($"Scheduler {_schedulerId} resumed");
             await _schedulerRepository.UpdateState(_schedulerId.Id, SchedulerState.Resumed).ConfigureAwait(false);
             _schedulerRunning = true;
         }
 
         public async Task Shutdown(CancellationToken token = default(CancellationToken))
         {
-            Log.Trace($"Scheduler {_schedulerId} shutdown");
+            Log.Verbose($"Scheduler {_schedulerId} shutdown");
             if (_misfireHandler != null)
             {
                 _misfireHandler.Shutdown();
@@ -256,7 +254,7 @@ namespace Quartz.Spi.MongoDbJobStore
                     {
                         await StoreJobInternal(job, replace).ConfigureAwait(false);
                         foreach (var trigger in triggersAndJobs[job])
-                            await StoreTriggerInternal((IOperableTrigger) trigger, job, replace,
+                            await StoreTriggerInternal((IOperableTrigger)trigger, job, replace,
                                 Models.TriggerState.Waiting, false, false, cancellationToken).ConfigureAwait(false);
                     }
                 }
@@ -449,37 +447,37 @@ namespace Quartz.Spi.MongoDbJobStore
 
         public async Task<int> GetNumberOfJobs(CancellationToken token = default(CancellationToken))
         {
-            return (int) await _jobDetailRepository.GetCount().ConfigureAwait(false);
+            return (int)await _jobDetailRepository.GetCount().ConfigureAwait(false);
         }
 
         public async Task<int> GetNumberOfTriggers(CancellationToken token = default(CancellationToken))
         {
-            return (int) await _triggerRepository.GetCount().ConfigureAwait(false);
+            return (int)await _triggerRepository.GetCount().ConfigureAwait(false);
         }
 
         public async Task<int> GetNumberOfCalendars(CancellationToken token = default(CancellationToken))
         {
-            return (int) await _calendarRepository.GetCount().ConfigureAwait(false);
+            return (int)await _calendarRepository.GetCount().ConfigureAwait(false);
         }
 
         public async Task<IReadOnlyCollection<JobKey>> GetJobKeys(GroupMatcher<JobKey> matcher,
             CancellationToken token = default(CancellationToken))
         {
-            return (IReadOnlyCollection<JobKey>) new HashSet<JobKey>(await _jobDetailRepository.GetJobsKeys(matcher).ConfigureAwait(false)
-                );
+            return (IReadOnlyCollection<JobKey>)new HashSet<JobKey>(await _jobDetailRepository.GetJobsKeys(matcher).ConfigureAwait(false)
+            );
         }
 
         public async Task<IReadOnlyCollection<TriggerKey>> GetTriggerKeys(GroupMatcher<TriggerKey> matcher,
             CancellationToken token = default(CancellationToken))
         {
-            return (IReadOnlyCollection<TriggerKey>) new HashSet<TriggerKey>(await _triggerRepository
+            return (IReadOnlyCollection<TriggerKey>)new HashSet<TriggerKey>(await _triggerRepository
                 .GetTriggerKeys(matcher).ConfigureAwait(false));
         }
 
         public async Task<IReadOnlyCollection<string>> GetJobGroupNames(
             CancellationToken token = default(CancellationToken))
         {
-            return (IReadOnlyCollection<string>) await _jobDetailRepository.GetJobGroupNames().ConfigureAwait(false);
+            return (IReadOnlyCollection<string>)await _jobDetailRepository.GetJobGroupNames().ConfigureAwait(false);
         }
 
         public async Task<IReadOnlyCollection<string>> GetTriggerGroupNames(
@@ -491,7 +489,7 @@ namespace Quartz.Spi.MongoDbJobStore
         public async Task<IReadOnlyCollection<string>> GetCalendarNames(
             CancellationToken token = default(CancellationToken))
         {
-            return (IReadOnlyCollection<string>) await _calendarRepository.GetCalendarNames().ConfigureAwait(false);
+            return (IReadOnlyCollection<string>)await _calendarRepository.GetCalendarNames().ConfigureAwait(false);
         }
 
         public async Task<IReadOnlyCollection<IOperableTrigger>> GetTriggersForJob(JobKey jobKey,
@@ -661,7 +659,7 @@ namespace Quartz.Spi.MongoDbJobStore
         public async Task<IReadOnlyCollection<string>> GetPausedTriggerGroups(
             CancellationToken cancellationToken = default(CancellationToken))
         {
-            return (IReadOnlyCollection<string>) new HashSet<string>(await _pausedTriggerGroupRepository
+            return (IReadOnlyCollection<string>)new HashSet<string>(await _pausedTriggerGroupRepository
                 .GetPausedTriggerGroups().ConfigureAwait(false));
         }
 
@@ -701,7 +699,7 @@ namespace Quartz.Spi.MongoDbJobStore
                             ResumeTriggerInternal(trigger.GetTrigger().Key, cancellationToken))).ConfigureAwait(false);
                     }
 
-                    return (IReadOnlyCollection<string>) new HashSet<string>(jobKeys.Select(key => key.Group));
+                    return (IReadOnlyCollection<string>)new HashSet<string>(jobKeys.Select(key => key.Group));
                 }
             }
             catch (AggregateException ex)
@@ -913,7 +911,7 @@ namespace Quartz.Spi.MongoDbJobStore
                     await _pausedTriggerGroupRepository.AddPausedTriggerGroup(triggerGroup).ConfigureAwait(false);
                 }
 
-            return (IReadOnlyCollection<string>) new HashSet<string>(triggerGroups);
+            return (IReadOnlyCollection<string>)new HashSet<string>(triggerGroups);
         }
 
         private async Task PauseAllInternal()
@@ -1059,7 +1057,7 @@ namespace Quartz.Spi.MongoDbJobStore
             if (existingCal)
             {
                 if (await _calendarRepository.UpdateCalendar(new Calendar(calName, calendar, InstanceName)).ConfigureAwait(false)
-                         == 0)
+                    == 0)
                 {
                     throw new JobPersistenceException("Couldn't store calendar.  Update failed.");
                 }
@@ -1069,7 +1067,7 @@ namespace Quartz.Spi.MongoDbJobStore
                     var triggers = await _triggerRepository.GetTriggers(calName).ConfigureAwait(false);
                     foreach (var trigger in triggers)
                     {
-                        var quartzTrigger = (IOperableTrigger) trigger.GetTrigger();
+                        var quartzTrigger = (IOperableTrigger)trigger.GetTrigger();
                         quartzTrigger.UpdateWithNewCalendar(calendar, MisfireThreshold);
                         await StoreTriggerInternal(quartzTrigger, null, true, Models.TriggerState.Waiting, false, false,
                             token).ConfigureAwait(false);
@@ -1116,8 +1114,8 @@ namespace Quartz.Spi.MongoDbJobStore
             if (!forceState)
             {
                 var shouldBePaused =
-                    await _pausedTriggerGroupRepository.IsTriggerGroupPaused(newTrigger.Key.Group).ConfigureAwait(false)
-                        ;
+                        await _pausedTriggerGroupRepository.IsTriggerGroupPaused(newTrigger.Key.Group).ConfigureAwait(false)
+                    ;
 
                 if (!shouldBePaused)
                 {
@@ -1282,7 +1280,7 @@ namespace Quartz.Spi.MongoDbJobStore
         private async Task DoUpdateOfMisfiredTrigger(Trigger trigger, bool forceState,
             Models.TriggerState newStateIfNotComplete, bool recovering)
         {
-            var operableTrigger = (IOperableTrigger) trigger.GetTrigger();
+            var operableTrigger = (IOperableTrigger)trigger.GetTrigger();
 
             ICalendar cal = null;
             if (trigger.CalendarName != null)
@@ -1369,7 +1367,7 @@ namespace Quartz.Spi.MongoDbJobStore
                         continue;
                     }
 
-                    var operableTrigger = (IOperableTrigger) nextTrigger.GetTrigger();
+                    var operableTrigger = (IOperableTrigger)nextTrigger.GetTrigger();
                     operableTrigger.FireInstanceId = GetFiredTriggerRecordId();
 
                     var firedTrigger = new FiredTrigger(operableTrigger.FireInstanceId, nextTrigger, null)
@@ -1428,7 +1426,7 @@ namespace Quartz.Spi.MongoDbJobStore
                         SignalSchedulingChangeOnTxCompletion(SchedulingSignalDateTime);
                         break;
                     case SchedulerInstruction.SetTriggerError:
-                        Log.Info("Trigger " + trigger.Key + " set to ERROR state.");
+                        Log.Information("Trigger " + trigger.Key + " set to ERROR state.");
                         await _triggerRepository.UpdateTriggerState(trigger.Key, Models.TriggerState.Error).ConfigureAwait(false)
                             ;
                         SignalSchedulingChangeOnTxCompletion(SchedulingSignalDateTime);
@@ -1439,7 +1437,7 @@ namespace Quartz.Spi.MongoDbJobStore
                         SignalSchedulingChangeOnTxCompletion(SchedulingSignalDateTime);
                         break;
                     case SchedulerInstruction.SetAllJobTriggersError:
-                        Log.Info("All triggers of Job " + trigger.JobKey + " set to ERROR state.");
+                        Log.Information("All triggers of Job " + trigger.JobKey + " set to ERROR state.");
                         await _triggerRepository.UpdateTriggersStates(trigger.JobKey, Models.TriggerState.Error).ConfigureAwait(false)
                             ;
                         SignalSchedulingChangeOnTxCompletion(SchedulingSignalDateTime);
@@ -1510,7 +1508,7 @@ namespace Quartz.Spi.MongoDbJobStore
             result += await _triggerRepository.UpdateTriggersStates(Models.TriggerState.Paused,
                 Models.TriggerState.PausedBlocked).ConfigureAwait(false);
 
-            Log.Info("Freed " + result + " triggers from 'acquired' / 'blocked' state.");
+            Log.Information("Freed " + result + " triggers from 'acquired' / 'blocked' state.");
 
             await RecoverMisfiredJobsInternal(true).ConfigureAwait(false);
 
@@ -1519,8 +1517,8 @@ namespace Quartz.Spi.MongoDbJobStore
                     trigger.GetRecoveryTrigger(await _triggerRepository.GetTriggerJobDataMap(trigger.TriggerKey).ConfigureAwait(false)));
             var recoveringJobTriggers = (await Task.WhenAll(results).ConfigureAwait(false)).ToList();
 
-            Log.Info("Recovering " + recoveringJobTriggers.Count +
-                     " jobs that were in-progress at the time of the last shut-down.");
+            Log.Information("Recovering " + recoveringJobTriggers.Count +
+                            " jobs that were in-progress at the time of the last shut-down.");
 
             foreach (var recoveringJobTrigger in recoveringJobTriggers)
                 if (await _jobDetailRepository.JobExists(recoveringJobTrigger.JobKey).ConfigureAwait(false))
@@ -1530,18 +1528,18 @@ namespace Quartz.Spi.MongoDbJobStore
                         true).ConfigureAwait(false);
                 }
 
-            Log.Info("Recovery complete");
+            Log.Information("Recovery complete");
 
             var completedTriggers =
                 await _triggerRepository.GetTriggerKeys(Models.TriggerState.Complete).ConfigureAwait(false);
             foreach (var completedTrigger in completedTriggers)
                 await RemoveTriggerInternal(completedTrigger).ConfigureAwait(false);
 
-            Log.Info(string.Format(CultureInfo.InvariantCulture, "Removed {0} 'complete' triggers.",
+            Log.Information(string.Format(CultureInfo.InvariantCulture, "Removed {0} 'complete' triggers.",
                 completedTriggers.Count));
 
             result = await _firedTriggerRepository.DeleteFiredTriggersByInstanceId(InstanceId).ConfigureAwait(false);
-            Log.Info("Removed " + result + " stale fired job entries.");
+            Log.Information("Removed " + result + " stale fired job entries.");
         }
 
         private async Task<RecoverMisfiredJobsResult> RecoverMisfiredJobsInternal(bool recovering)
@@ -1554,14 +1552,14 @@ namespace Quartz.Spi.MongoDbJobStore
 
             if (hasMoreMisfiredTriggers)
             {
-                Log.Info(
+                Log.Information(
                     "Handling the first " + misfiredTriggers.Count +
                     " triggers that missed their scheduled fire-time.  " +
                     "More misfired triggers remain to be processed.");
             }
             else if (misfiredTriggers.Count > 0)
             {
-                Log.Info(
+                Log.Information(
                     "Handling " + misfiredTriggers.Count +
                     " trigger(s) that missed their scheduled fire-time.");
             }

@@ -1,14 +1,11 @@
 ﻿using System;
 using System.Threading;
-using Common.Logging;
 using Quartz.Impl.AdoJobStore;
 
 namespace Quartz.Spi.MongoDbJobStore
 {
     internal class MisfireHandler : QuartzThread
     {
-        private static readonly ILog Log = LogManager.GetLogger<MisfireHandler>();
-
         private readonly MongoDbJobStore _jobStore;
         private bool _shutdown;
         private int _numFails;
@@ -80,7 +77,7 @@ namespace Quartz.Spi.MongoDbJobStore
             {
                 if (_numFails%_jobStore.RetryableActionErrorLogThreshold == 0)
                 {
-                    Log.Error($"Error handling misfires: {ex.Message}", ex);
+                    Log.Error(ex, "Error handling misfires: {ex.Message}", ex.Message);
                 }
                 _numFails++;
             }
