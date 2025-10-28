@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using MongoDB.Driver;
 using Quartz.Impl.AdoJobStore;
 using Quartz.Impl.Matchers;
+using Quartz.Logging;
 using Quartz.Spi.MongoDbJobStore.Models;
 using Quartz.Spi.MongoDbJobStore.Models.Id;
 using Quartz.Spi.MongoDbJobStore.Repositories;
@@ -844,7 +845,7 @@ namespace Quartz.Spi.MongoDbJobStore
                     await _triggerRepository.GetMisfireCount(MisfireTime.UtcDateTime).ConfigureAwait(false);
                 if (misfireCount == 0)
                 {
-                    Log.Debug("Found 0 triggers that missed their scheduled fire-time.");
+                    Log.Debug("Found {0} triggers that missed their scheduled fire-time.", misfireCount);
                 }
                 else
                 {
@@ -1509,8 +1510,7 @@ namespace Quartz.Spi.MongoDbJobStore
                     trigger.GetRecoveryTrigger(await _triggerRepository.GetTriggerJobDataMap(trigger.TriggerKey).ConfigureAwait(false)));
             var recoveringJobTriggers = (await Task.WhenAll(results).ConfigureAwait(false)).ToList();
 
-            Log.Information("Recovering " + recoveringJobTriggers.Count +
-                            " jobs that were in-progress at the time of the last shut-down.");
+            Log.Information("Recovering {0} jobs that were in-progress at the time of the last shut-down.", recoveringJobTriggers.Count);
 
             foreach (var recoveringJobTrigger in recoveringJobTriggers)
                 if (await _jobDetailRepository.JobExists(recoveringJobTrigger.JobKey).ConfigureAwait(false))
@@ -1551,12 +1551,13 @@ namespace Quartz.Spi.MongoDbJobStore
             else if (misfiredTriggers.Count > 0)
             {
                 Log.Information(
-                    "Handling " + misfiredTriggers.Count +
-                    " trigger(s) that missed their scheduled fire-time.");
+                    "Handling {0} trigger(s) that missed their scheduled fire-time.",
+                    misfiredTriggers.Count
+                    );
             }
             else
             {
-                Log.Debug("Found 0 triggers that missed their scheduled fire-time.");
+                Log.Debug("Found {0} triggers that missed their scheduled fire-time.", misfiredTriggers.Count);
                 return RecoverMisfiredJobsResult.NoOp;
             }
 
